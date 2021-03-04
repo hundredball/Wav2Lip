@@ -19,10 +19,11 @@ from hparams import hparams, get_image_list
 
 parser = argparse.ArgumentParser(description='Code to train the Wav2Lip model without the visual quality discriminator')
 
-parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", required=True, type=str)
+parser.add_argument('--mode', help='train or test', default='train', type=str)
+parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", default='lrs2_preprocessed/', type=str)
 
-parser.add_argument('--checkpoint_dir', help='Save checkpoints to this directory', required=True, type=str)
-parser.add_argument('--syncnet_checkpoint_path', help='Load the pre-trained Expert discriminator', required=True, type=str)
+parser.add_argument('--checkpoint_dir', help='Save checkpoints to this directory', default='checkpoints_train/', type=str)
+parser.add_argument('--syncnet_checkpoint_path', help='Load the pre-trained Expert discriminator', default='checkpoints/lipsync_expert.pth', type=str)
 
 parser.add_argument('--checkpoint_path', help='Resume from this checkpoint', default=None, type=str)
 
@@ -157,10 +158,10 @@ class Dataset(object):
             wrong_window = self.prepare_window(wrong_window)
             x = np.concatenate([window, wrong_window], axis=0)
 
-            x = torch.FloatTensor(x)
-            mel = torch.FloatTensor(mel.T).unsqueeze(0)
-            indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)
-            y = torch.FloatTensor(y)
+            x = torch.FloatTensor(x)    # Wrong window
+            mel = torch.FloatTensor(mel.T).unsqueeze(0)    # mel for y
+            indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)    # mel for individual images of y
+            y = torch.FloatTensor(y)    # Correct window
             return x, indiv_mels, mel, y
 
 def save_sample_images(x, g, gt, global_step, checkpoint_dir):
@@ -176,6 +177,11 @@ def save_sample_images(x, g, gt, global_step, checkpoint_dir):
         for t in range(len(c)):
             cv2.imwrite('{}/{}_{}.jpg'.format(folder, batch_idx, t), c[t])
 
+device = torch.device("cuda" if use_cuda else "cpu")
+syncnet = SyncNet().to(device)
+for p in syncnet.parameters():
+    p.requires_grad = False
+
 logloss = nn.BCELoss()
 def cosine_loss(a, v, y):
     d = nn.functional.cosine_similarity(a, v)
@@ -183,12 +189,6 @@ def cosine_loss(a, v, y):
 
     return loss
 
-device = torch.device("cuda" if use_cuda else "cpu")
-syncnet = SyncNet().to(device)
-for p in syncnet.parameters():
-    p.requires_grad = False
-
-recon_loss = nn.L1Loss()
 def get_sync_loss(mel, g):
     g = g[:, :, :, g.size(3)//2:]
     g = torch.cat([g[:, :, i] for i in range(syncnet_T)], dim=1)
@@ -196,13 +196,17 @@ def get_sync_loss(mel, g):
     a, v = syncnet(mel, g)
     y = torch.ones(g.size(0), 1).float().to(device)
     return cosine_loss(a, v, y)
+    
+recon_loss = nn.L1Loss()
+    
 
 def train(device, model, train_data_loader, test_data_loader, optimizer,
           checkpoint_dir=None, checkpoint_interval=None, nepochs=None):
 
     global global_step, global_epoch
     resumed_step = global_step
- 
+    print('nepochs: ', nepochs)
+    print('global_epoch: ', global_epoch)
     while global_epoch < nepochs:
         print('Starting Epoch: {}'.format(global_epoch))
         running_sync_loss, running_l1_loss = 0., 0.
@@ -248,18 +252,18 @@ def train(device, model, train_data_loader, test_data_loader, optimizer,
 
             if global_step == 1 or global_step % hparams.eval_interval == 0:
                 with torch.no_grad():
-                    average_sync_loss = eval_model(test_data_loader, global_step, device, model, checkpoint_dir)
+                    average_sync_loss = eval_model(test_data_loader, device, model)
 
                     if average_sync_loss < .75:
                         hparams.set_hparam('syncnet_wt', 0.01) # without image GAN a lesser weight is sufficient
 
-            prog_bar.set_description('L1: {}, Sync Loss: {}'.format(running_l1_loss / (step + 1),
+            prog_bar.set_description('[Train] L1: {}, Sync Loss: {}'.format(running_l1_loss / (step + 1),
                                                                     running_sync_loss / (step + 1)))
 
         global_epoch += 1
         
 
-def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
+def eval_model(test_data_loader, device, model):
     eval_steps = 700
     print('Evaluating for {} steps'.format(eval_steps))
     sync_losses, recon_losses = [], []
@@ -287,7 +291,7 @@ def eval_model(test_data_loader, global_step, device, model, checkpoint_dir):
                 averaged_sync_loss = sum(sync_losses) / len(sync_losses)
                 averaged_recon_loss = sum(recon_losses) / len(recon_losses)
 
-                print('L1: {}, Sync loss: {}'.format(averaged_recon_loss, averaged_sync_loss))
+                print('[Test] L1: {}, Sync loss: {}'.format(averaged_recon_loss, averaged_sync_loss))
 
                 return averaged_sync_loss
 
@@ -340,20 +344,27 @@ if __name__ == "__main__":
 
     # Dataset and Dataloader setup
     train_dataset = Dataset('train')
-    test_dataset = Dataset('val')
+    val_dataset = Dataset('val')
+    test_dataset = Dataset('test')
 
     train_data_loader = data_utils.DataLoader(
         train_dataset, batch_size=hparams.batch_size, shuffle=True,
         num_workers=hparams.num_workers)
 
+    val_data_loader = data_utils.DataLoader(
+        val_dataset, batch_size=hparams.batch_size,
+        num_workers=hparams.num_workers)
+        
     test_data_loader = data_utils.DataLoader(
         test_dataset, batch_size=hparams.batch_size,
-        num_workers=4)
+        num_workers=hparams.num_workers)
 
-    device = torch.device("cuda" if use_cuda else "cpu")
+    #device = torch.device("cuda" if use_cuda else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Model
     model = Wav2Lip().to(device)
+    
     print('total trainable params {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
     optimizer = optim.Adam([p for p in model.parameters() if p.requires_grad],
@@ -368,7 +379,10 @@ if __name__ == "__main__":
         os.mkdir(checkpoint_dir)
 
     # Train!
-    train(device, model, train_data_loader, test_data_loader, optimizer,
-              checkpoint_dir=checkpoint_dir,
-              checkpoint_interval=hparams.checkpoint_interval,
-              nepochs=hparams.nepochs)
+    if args.mode == 'train':
+        train(device, model, train_data_loader, val_data_loader, optimizer,
+                  checkpoint_dir=checkpoint_dir,
+                  checkpoint_interval=hparams.checkpoint_interval,
+                  nepochs=hparams.nepochs)
+    elif args.mode == 'test':
+        eval_model(test_data_loader, device, model)

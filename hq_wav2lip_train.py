@@ -20,10 +20,11 @@ from hparams import hparams, get_image_list
 
 parser = argparse.ArgumentParser(description='Code to train the Wav2Lip model WITH the visual quality discriminator')
 
-parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", required=True, type=str)
+parser.add_argument('--mode', help='train or test', default='train', type=str)
+parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", default='lrs2_preprocessed/', type=str)
 
-parser.add_argument('--checkpoint_dir', help='Save checkpoints to this directory', required=True, type=str)
-parser.add_argument('--syncnet_checkpoint_path', help='Load the pre-trained Expert discriminator', required=True, type=str)
+parser.add_argument('--checkpoint_dir', help='Save checkpoints to this directory', default='checkpoints_train_hq/', type=str)
+parser.add_argument('--syncnet_checkpoint_path', help='Load the pre-trained Expert discriminator', default='checkpoints/lipsync_expert.pth', type=str)
 
 parser.add_argument('--checkpoint_path', help='Resume generator from this checkpoint', default=None, type=str)
 parser.add_argument('--disc_checkpoint_path', help='Resume quality disc from this checkpoint', default=None, type=str)
@@ -178,19 +179,18 @@ def save_sample_images(x, g, gt, global_step, checkpoint_dir):
         for t in range(len(c)):
             cv2.imwrite('{}/{}_{}.jpg'.format(folder, batch_idx, t), c[t])
 
+device = torch.device("cuda" if use_cuda else "cpu")
+syncnet = SyncNet().to(device)
+for p in syncnet.parameters():
+    p.requires_grad = False
+
 logloss = nn.BCELoss()
 def cosine_loss(a, v, y):
     d = nn.functional.cosine_similarity(a, v)
     loss = logloss(d.unsqueeze(1), y)
 
     return loss
-
-device = torch.device("cuda" if use_cuda else "cpu")
-syncnet = SyncNet().to(device)
-for p in syncnet.parameters():
-    p.requires_grad = False
-
-recon_loss = nn.L1Loss()
+    
 def get_sync_loss(mel, g):
     g = g[:, :, :, g.size(3)//2:]
     g = torch.cat([g[:, :, i] for i in range(syncnet_T)], dim=1)
@@ -198,11 +198,20 @@ def get_sync_loss(mel, g):
     a, v = syncnet(mel, g)
     y = torch.ones(g.size(0), 1).float().to(device)
     return cosine_loss(a, v, y)
+    
+recon_loss = nn.L1Loss()
+'''
+# --------- Add content loss here ---------------
+def get_content_loss(g, gt):
+
+'''
 
 def train(device, model, disc, train_data_loader, test_data_loader, optimizer, disc_optimizer,
           checkpoint_dir=None, checkpoint_interval=None, nepochs=None):
     global global_step, global_epoch
     resumed_step = global_step
+    
+    print('global_epoch: ', global_epoch)
 
     while global_epoch < nepochs:
         print('Starting Epoch: {}'.format(global_epoch))
@@ -284,12 +293,12 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
 
             if global_step % hparams.eval_interval == 0:
                 with torch.no_grad():
-                    average_sync_loss = eval_model(test_data_loader, global_step, device, model, disc)
+                    average_sync_loss = eval_model(test_data_loader, device, model, disc)
 
                     if average_sync_loss < .75:
                         hparams.set_hparam('syncnet_wt', 0.03)
 
-            prog_bar.set_description('L1: {}, Sync: {}, Percep: {} | Fake: {}, Real: {}'.format(running_l1_loss / (step + 1),
+            prog_bar.set_description('[Train] L1: {}, Sync: {}, Percep: {} | Fake: {}, Real: {}'.format(running_l1_loss / (step + 1),
                                                                                         running_sync_loss / (step + 1),
                                                                                         running_perceptual_loss / (step + 1),
                                                                                         running_disc_fake_loss / (step + 1),
@@ -297,7 +306,7 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
 
         global_epoch += 1
 
-def eval_model(test_data_loader, global_step, device, model, disc):
+def eval_model(test_data_loader, device, model, disc):
     eval_steps = 300
     print('Evaluating for {} steps'.format(eval_steps))
     running_sync_loss, running_l1_loss, running_disc_real_loss, running_disc_fake_loss, running_perceptual_loss = [], [], [], [], []
@@ -343,7 +352,7 @@ def eval_model(test_data_loader, global_step, device, model, disc):
 
             if step > eval_steps: break
 
-        print('L1: {}, Sync: {}, Percep: {} | Fake: {}, Real: {}'.format(sum(running_l1_loss) / len(running_l1_loss),
+        print('[Test] L1: {}, Sync: {}, Percep: {} | Fake: {}, Real: {}'.format(sum(running_l1_loss) / len(running_l1_loss),
                                                             sum(running_sync_loss) / len(running_sync_loss),
                                                             sum(running_perceptual_loss) / len(running_perceptual_loss),
                                                             sum(running_disc_fake_loss) / len(running_disc_fake_loss),
@@ -399,15 +408,21 @@ if __name__ == "__main__":
 
     # Dataset and Dataloader setup
     train_dataset = Dataset('train')
-    test_dataset = Dataset('val')
+    val_dataset = Dataset('val')
+    test_dataset = Dataset('test')
 
     train_data_loader = data_utils.DataLoader(
         train_dataset, batch_size=hparams.batch_size, shuffle=True,
         num_workers=hparams.num_workers)
 
-    test_data_loader = data_utils.DataLoader(
-        test_dataset, batch_size=hparams.batch_size,
+    val_data_loader = data_utils.DataLoader(
+        val_dataset, batch_size=hparams.batch_size,
         num_workers=4)
+
+    test_data_loader = data_utils.DataLoader(
+        val_dataset, batch_size=hparams.batch_size,
+        num_workers=4)
+    
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
@@ -437,7 +452,11 @@ if __name__ == "__main__":
         os.mkdir(checkpoint_dir)
 
     # Train!
-    train(device, model, disc, train_data_loader, test_data_loader, optimizer, disc_optimizer,
-              checkpoint_dir=checkpoint_dir,
-              checkpoint_interval=hparams.checkpoint_interval,
-              nepochs=hparams.nepochs)
+    if args.mode == 'train':
+        # Pretrained model uses 88 epochs
+        train(device, model, disc, train_data_loader, val_data_loader, optimizer, disc_optimizer,
+                  checkpoint_dir=checkpoint_dir,
+                  checkpoint_interval=hparams.checkpoint_interval,
+                  nepochs=hparams.nepochs)
+    elif args.mode == 'test':
+        eval_model(test_data_loader, device, model, disc)

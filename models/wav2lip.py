@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 import math
+from torchvision.models import vgg19
 
 from .conv import Conv2dTranspose, Conv2d, nonorm_Conv2d
 
@@ -182,3 +183,12 @@ class Wav2Lip_disc_qual(nn.Module):
             x = f(x)
 
         return self.binary_pred(x).view(len(x), -1)
+    
+class FeatureExtractor(nn.Module):
+    def __init__(self):
+        super(FeatureExtractor, self).__init__()
+        vgg19_model = vgg19(pretrained=True)
+        self.feature_extractor = nn.Sequential(*list(vgg19_model.features.children())[:18])
+
+    def forward(self, img):
+        return self.feature_extractor(img)

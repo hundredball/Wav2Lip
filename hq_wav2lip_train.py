@@ -217,6 +217,7 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
         print('Starting Epoch: {}'.format(global_epoch))
         running_sync_loss, running_l1_loss, disc_loss, running_perceptual_loss = 0., 0., 0., 0.
         running_disc_real_loss, running_disc_fake_loss = 0., 0.
+        running_disc_real_acc, running_disc_fake_acc = 0., 0.
         prog_bar = tqdm(enumerate(train_data_loader))
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             disc.train()
@@ -257,15 +258,26 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
             pred = disc(gt)
             disc_real_loss = F.binary_cross_entropy(pred, torch.ones((len(pred), 1)).to(device))
             disc_real_loss.backward()
+            
+            pred_label = pred.detach()
+            pred_label[pred<=0.5], pred_label[pred>0.5] = 0, 1
+            disc_real_acc = torch.sum(pred_label==1) / len(pred) * 100
+            
 
             pred = disc(g.detach())
             disc_fake_loss = F.binary_cross_entropy(pred, torch.zeros((len(pred), 1)).to(device))
             disc_fake_loss.backward()
+            
+            pred_label = pred.detach()
+            pred_label[pred<=0.5], pred_label[pred>0.5] = 0, 1
+            disc_fake_acc = torch.sum(pred_label==0) / len(pred) * 100
 
             disc_optimizer.step()
 
             running_disc_real_loss += disc_real_loss.item()
             running_disc_fake_loss += disc_fake_loss.item()
+            running_disc_real_acc += disc_real_acc.item()
+            running_disc_fake_acc += disc_fake_acc.item()
 
             if global_step % checkpoint_interval == 0:
                 save_sample_images(x, g, gt, global_step, checkpoint_dir)
@@ -294,15 +306,19 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
             if global_step % hparams.eval_interval == 0:
                 with torch.no_grad():
                     average_sync_loss = eval_model(test_data_loader, device, model, disc)
-
+                    print('Average_sync_loss: ', average_sync_loss)
+                    print('hparams.disc_wt: ', hparams.disc_wt)
+                    print('hparams.syncnet_wt: ', hparams.syncnet_wt)
                     if average_sync_loss < .75:
                         hparams.set_hparam('syncnet_wt', 0.03)
 
-            prog_bar.set_description('[Train] L1: {}, Sync: {}, Percep: {} | Fake: {}, Real: {}'.format(running_l1_loss / (step + 1),
+            prog_bar.set_description('[Train] Epoch {} - L1: {}, Sync: {}, Percep: {} | Loss Fake: {}, Real: {}; Accuracy Fake:{}, Real: {}'.format(global_epoch, running_l1_loss / (step + 1),
                                                                                         running_sync_loss / (step + 1),
                                                                                         running_perceptual_loss / (step + 1),
                                                                                         running_disc_fake_loss / (step + 1),
-                                                                                        running_disc_real_loss / (step + 1)))
+                                                                                        running_disc_real_loss / (step + 1),
+                                                                                        running_disc_fake_acc / (step + 1),
+                                                                                        running_disc_real_acc / (step + 1)))
 
         global_epoch += 1
 
@@ -424,11 +440,13 @@ if __name__ == "__main__":
         num_workers=4)
     
 
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-     # Model
-    model = Wav2Lip().to(device)
-    disc = Wav2Lip_disc_qual().to(device)
+    # Model
+    model = Wav2Lip()
+    disc = Wav2Lip_disc_qual()
+    model.to(device)
+    disc.to(device)
 
     print('total trainable params {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     print('total DISC trainable params {}'.format(sum(p.numel() for p in disc.parameters() if p.requires_grad)))
@@ -447,7 +465,7 @@ if __name__ == "__main__":
         
     load_checkpoint(args.syncnet_checkpoint_path, syncnet, None, reset_optimizer=True, 
                                 overwrite_global_states=False)
-
+    
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)
 

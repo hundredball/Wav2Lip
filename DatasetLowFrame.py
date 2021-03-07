@@ -152,7 +152,8 @@ class DatasetLowFrame(object):
             return xT, xW, indiv_mels, mel, y
         
 if __name__ == '__main__':
-    data_root = 'lrs2_preprocessed/'
+    data_root = '../lrs2_preprocessed_1/'
+    #data_root = '../teams/ECE285_WI21_A00/22/lrs2_preprocessed_1/'
     dataset_low = DatasetLowFrame(data_root, 'val')
     
     data_loader = data_utils.DataLoader(dataset_low, batch_size=1, shuffle=False,num_workers=0)

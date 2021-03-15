@@ -187,8 +187,12 @@ class Wav2Lip_disc_qual(nn.Module):
 class FeatureExtractor(nn.Module):
     def __init__(self):
         super(FeatureExtractor, self).__init__()
-        vgg19_model = vgg19(pretrained=True)
+        vgg19_model = vgg19(pretrained=True).cuda()
         self.feature_extractor = nn.Sequential(*list(vgg19_model.features.children())[:18])
 
     def forward(self, img):
-        return self.feature_extractor(img)
+        
+        x = torch.transpose(img, 1, 2)    # (batch, channel, frame, height, width) -> (b, f, c, h, w)
+        x = x.reshape(-1, x.shape[2], x.shape[3], x.shape[4])    # (b, f, c, h, w) -> (b*f, c, h, w)
+        
+        return self.feature_extractor(x)

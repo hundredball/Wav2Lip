@@ -2,7 +2,7 @@ from os.path import dirname, join, basename, isfile
 from tqdm import tqdm
 
 from models import SyncNet_color as SyncNet
-from models import Wav2Lip, Wav2Lip_disc_qual
+from models import Wav2Lip, Wav2Lip_disc_qual, FeatureExtractor
 import audio
 
 import torch
@@ -18,7 +18,7 @@ from glob import glob
 import os, random, cv2, argparse
 from hparams import hparams, get_image_list
 
-parser = argparse.ArgumentParser(description='Code to train the Wav2Lip model WITH the visual quality discriminator')
+parser = argparse.ArgumentParser(description='Code to train the Wav2Lip model WITH the visual quality discriminator and SRGAN loss')
 
 parser.add_argument('--mode', help='train or test', default='train', type=str)
 parser.add_argument("--data_root", help="Root folder of the preprocessed LRS2 dataset", default='lrs2_preprocessed/', type=str)
@@ -200,6 +200,17 @@ def get_sync_loss(mel, g):
     return cosine_loss(a, v, y)
     
 recon_loss = nn.L1Loss()
+feature_extractor = FeatureExtractor()
+feature_extractor.eval()
+
+# --------- Add content loss here ---------------
+def get_content_loss(g, gt):
+    
+    gen_feautres = feature_extractor(g)
+    real_features = feature_extractor(gt)
+    loss_content = recon_loss(gen_feautres, real_features.detach())
+
+    return loss_content
 
 def train(device, model, disc, train_data_loader, test_data_loader, optimizer, disc_optimizer,
           checkpoint_dir=None, checkpoint_interval=None, nepochs=None):
@@ -235,7 +246,9 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
                 sync_loss = 0.
 
             if hparams.disc_wt > 0.:
-                perceptual_loss = disc.perceptual_forward(g)
+                adversarial_loss = disc.perceptual_forward(g)
+                content_loss = get_content_loss(g, gt)
+                perceptual_loss = content_loss + 1e-3 * adversarial_loss
             else:
                 perceptual_loss = 0.
 
@@ -304,7 +317,7 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
                     print('Average_sync_loss: ', average_sync_loss)
                     print('hparams.disc_wt: ', hparams.disc_wt)
                     print('hparams.syncnet_wt: ', hparams.syncnet_wt)
-                    if average_sync_loss < .75:
+                    if global_step>9 or average_sync_loss < .75:
                         hparams.set_hparam('syncnet_wt', 0.03)
 
             prog_bar.set_description('[Train] Epoch {} - L1: {}, Sync: {}, Percep: {} | Loss Fake: {}, Real: {}'.format(global_epoch, running_l1_loss / (step + 1),
@@ -315,8 +328,7 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
 
         global_epoch += 1
 
-def eval_model(test_data_loader, device, model, disc, eval_steps = 300):
-    
+def eval_model(test_data_loader, device, model, disc, eval_steps=300):
     print('Evaluating for {} steps'.format(eval_steps))
     running_sync_loss, running_l1_loss, running_disc_real_loss, running_disc_fake_loss, running_perceptual_loss = [], [], [], [], []
     while 1:
@@ -342,7 +354,9 @@ def eval_model(test_data_loader, device, model, disc, eval_steps = 300):
             sync_loss = get_sync_loss(mel, g)
             
             if hparams.disc_wt > 0.:
-                perceptual_loss = disc.perceptual_forward(g)
+                adversarial_loss = disc.perceptual_forward(g)
+                content_loss = get_content_loss(g, gt)
+                perceptual_loss = content_loss + 1e-3 * adversarial_loss
             else:
                 perceptual_loss = 0.
 

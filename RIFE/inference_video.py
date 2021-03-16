@@ -53,19 +53,15 @@ def transferAudio(sourceVideo, targetVideo):
     # remove temp directory
     shutil.rmtree("temp")
 
-    
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-torch.set_grad_enabled(False)
-if torch.cuda.is_available():
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
-
 parser = argparse.ArgumentParser(description='Interpolation for a pair of images')
 parser.add_argument('--video', dest='video', type=str, default=None)
 parser.add_argument('--output', dest='output', type=str, default=None)
 parser.add_argument('--img', dest='img', type=str, default=None)
 parser.add_argument('--montage', dest='montage', action='store_true', help='montage origin video')
+parser.add_argument('--model', dest='modelDir', type=str, default='train_log', help='directory with trained model files')
+parser.add_argument('--fp16', dest='fp16', action='store_true', help='fp16 mode for faster and more lightweight inference on cards with Tensor Cores')
 parser.add_argument('--UHD', dest='UHD', action='store_true', help='support 4k video')
+parser.add_argument('--scale', dest='scale', type=float, default=1.0, help='Try scale=0.5 for 4k video')
 parser.add_argument('--skip', dest='skip', action='store_true', help='whether to remove static frames before processing')
 parser.add_argument('--fps', dest='fps', type=int, default=None)
 parser.add_argument('--png', dest='png', action='store_true', help='whether to vid_out png format vid_outs')
@@ -73,12 +69,30 @@ parser.add_argument('--ext', dest='ext', type=str, default='mp4', help='vid_out 
 parser.add_argument('--exp', dest='exp', type=int, default=1)
 args = parser.parse_args()
 assert (not args.video is None or not args.img is None)
+if args.UHD and args.scale==1.0:
+    args.scale = 0.5
+assert args.scale in [0.25, 0.5, 1.0, 2.0, 4.0]
 if not args.img is None:
     args.png = True
+    
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.set_grad_enabled(False)
+if torch.cuda.is_available():
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.benchmark = True
+    if(args.fp16):
+        torch.set_default_tensor_type(torch.cuda.HalfTensor)
 
-from model.RIFE_HDv2 import Model
-model = Model()
-model.load_model(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'train_log'), -1)
+try:
+    from model.RIFE_HDv2 import Model
+    model = Model()
+    model.load_model(args.modelDir, -1)
+    print("Loaded v2.x HD model.")
+except:
+    from model.RIFE_HD import Model
+    model = Model()
+    model.load_model(args.modelDir, -1)
+    print("Loaded v1.x HD model")
 model.eval()
 model.device()
 
@@ -136,32 +150,38 @@ def clear_write_buffer(user_args, write_buffer):
             vid_out.write(item[:, :, ::-1])
 
 def build_read_buffer(user_args, read_buffer, videogen):
-    for frame in videogen:
-        if not user_args.img is None:
-            frame = cv2.imread(os.path.join(user_args.img, frame))[:, :, ::-1].copy()
-        if user_args.montage:
-            frame = frame[:, left: left + w]
-        read_buffer.put(frame)
+    try:
+        for frame in videogen:
+             if not user_args.img is None:
+                  frame = cv2.imread(os.path.join(user_args.img, frame))[:, :, ::-1].copy()
+             if user_args.montage:
+                  frame = frame[:, left: left + w]
+             read_buffer.put(frame)
+    except:
+        pass
     read_buffer.put(None)
 
 def make_inference(I0, I1, exp):
     global model
-    middle = model.inference(I0, I1, args.UHD)
+    middle = model.inference(I0, I1, args.scale)
     if exp == 1:
         return [middle]
     first_half = make_inference(I0, middle, exp=exp - 1)
     second_half = make_inference(middle, I1, exp=exp - 1)
     return [*first_half, middle, *second_half]
-            
+    
+def pad_image(img):
+    if(args.fp16):
+        return F.pad(img, padding).half()
+    else:
+        return F.pad(img, padding)
+
 if args.montage:
     left = w // 4
     w = w // 2
-if args.UHD:
-    ph = ((h - 1) // 64 + 1) * 64
-    pw = ((w - 1) // 64 + 1) * 64
-else:
-    ph = ((h - 1) // 32 + 1) * 32
-    pw = ((w - 1) // 32 + 1) * 32
+tmp = max(32, int(32 / args.scale))
+ph = ((h - 1) // tmp + 1) * tmp
+pw = ((w - 1) // tmp + 1) * tmp
 padding = (0, pw - w, 0, ph - h)
 pbar = tqdm(total=tot_frame)
 skip_frame = 1
@@ -173,14 +193,14 @@ _thread.start_new_thread(build_read_buffer, (args, read_buffer, videogen))
 _thread.start_new_thread(clear_write_buffer, (args, write_buffer))
 
 I1 = torch.from_numpy(np.transpose(lastframe, (2,0,1))).to(device, non_blocking=True).unsqueeze(0).float() / 255.
-I1 = F.pad(I1, padding)
+I1 = pad_image(I1)
 while True:
     frame = read_buffer.get()
     if frame is None:
         break
     I0 = I1
     I1 = torch.from_numpy(np.transpose(frame, (2,0,1))).to(device, non_blocking=True).unsqueeze(0).float() / 255.
-    I1 = F.pad(I1, padding)
+    I1 = pad_image(I1)
     I0_small = F.interpolate(I0, (32, 32), mode='bilinear', align_corners=False)
     I1_small = F.interpolate(I1, (32, 32), mode='bilinear', align_corners=False)
     ssim = ssim_matlab(I0_small, I1_small)

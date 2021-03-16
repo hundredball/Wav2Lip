@@ -4,8 +4,7 @@ sys.path.append('.')
 import time
 import torch
 import torch.nn as nn
-import torch.cuda.amp as amp
-from model.RIFE_HDv2 import Model
+from model.RIFE import Model
 
 model = Model()
 model.eval()
@@ -22,27 +21,9 @@ with torch.no_grad():
         pred = model.inference(I0, I1)
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-    
     time_stamp = time.time()
-    for i in range(200):
+    for i in range(100):
         pred = model.inference(I0, I1)
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-    print(f'Without amp: {(time.time() - time_stamp)}')
-
-    time_stamp = time.time()
-    with amp.autocast(torch.cuda.is_available()):
-        for i in range(200):
-            pred = model.inference(I0, I1)
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
-    print(f'With amp: {(time.time() - time_stamp)}')
-    
-    device = torch.device('cpu')
-    I0 = I0.to(device)
-    I1 = I1.to(device)
-    model.device(device)
-    time_stamp = time.time()
-    for i in range(200):
-        pred = model.inference(I0, I1)
-    print(f'cpu: {(time.time() - time_stamp)}')
+    print((time.time() - time_stamp) / 100)

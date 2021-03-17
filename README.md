@@ -11,7 +11,7 @@ Getting the weights
 | Model  | Description |  Link to the model | 
 | :-------------: | :---------------: | :---------------: |
 | Wav2Lip + SRGAN | Wav2Lip with perceptual loss | [Link](https://drive.google.com/file/d/1Vk-Zmhf06VsAm6ORKyhEvLEfz9W9MhXC/view?usp=sharing) |
-| RIFE | RIFE trained on LRS2 Dataset | [Link]() |
+| RIFE | RIFE trained on LRS2 Dataset | [Link](https://drive.google.com/drive/folders/1AC5EWooUHHTfb7dP8ue05uLfBOMkYs8n?usp=sharing) |
 
 Evaluation
 ----------

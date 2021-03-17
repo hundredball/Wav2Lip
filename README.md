@@ -1,3 +1,21 @@
+# RIFE + Wav2Lip
+
+This code combines RIFE and Wav2Lip to interpolate the intermdiate frames by RIFE and synchronize the lip movements by Wav2Lip.
+
+Prerequisites
+-------------
+- Follow Prerequisites in Wav2Lip and Installation in RIFE
+
+Getting the weights
+----------
+| Model  | Description |  Link to the model | 
+| Wav2Lip + SRGAN | Wav2Lip with perceptual loss | [Link](https://drive.google.com/file/d/1Vk-Zmhf06VsAm6ORKyhEvLEfz9W9MhXC/view?usp=sharing) |
+| RIFE | RIFE trained on LRS2 Dataset | [Link]() |
+
+Evaluation
+----------
+Will be updated.
+
 # **Wav2Lip**: *Accurately Lip-syncing Videos In The Wild*
 
 This code is part of the paper: _A Lip Sync Expert Is All You Need for Speech to Lip Generation In the Wild_ published at ACM Multimedia 2020. 

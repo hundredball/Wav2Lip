@@ -214,18 +214,46 @@ def get_content_loss(g, gt):
 
     return loss_content
 
+def eval_model(test_data_loader, wav2lip_rife, device, model, eval_steps=300):
+
+    print('Evaluating for {} steps'.format(eval_steps))
+    sync_losses, recon_losses = [], []
+    step = 0
+    while 1:
+        for x, indiv_mels, mel, gt in test_data_loader:
+            step += 1
+            model.eval()
+
+            # Move data to CUDA device
+            x = x.to(device)
+            gt = gt.to(device)
+            indiv_mels = indiv_mels.to(device)
+            mel = mel.to(device)
+
+            g = model(indiv_mels, x)
+
+            sync_loss = get_sync_loss(mel, g)
+            l1loss = recon_loss(g, gt)
+
+            sync_losses.append(sync_loss.item())
+            recon_losses.append(l1loss.item())
+
+            if step > eval_steps: 
+                averaged_sync_loss = sum(sync_losses) / len(sync_losses)
+                averaged_recon_loss = sum(recon_losses) / len(recon_losses)
+
+                print('[Test] L1: {}, Sync loss: {}'.format(averaged_recon_loss, averaged_sync_loss))
+
+                return averaged_sync_loss
+
+
 def eval_model(test_data_loader, wav2lip_rife, device, disc, eval_steps=300):
     print('Evaluating for {} steps'.format(eval_steps))
     running_sync_loss, running_l1_loss, running_disc_real_loss, running_disc_fake_loss, running_perceptual_loss = [], [], [], [], []
-    
-
-    
 
     while 1:
         for step, (x, xW, indiv_mels, mel, gt) in enumerate((test_data_loader)):
  
-            
-            
             disc.eval()
 
             x = x.to(device)
@@ -305,11 +333,6 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
         global_epoch = checkpoint["global_epoch"]
 
     return model
-
-
-
-
-
 
 
 syncnet_T = 5

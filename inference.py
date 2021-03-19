@@ -284,36 +284,15 @@ def main():
 
 
 
-def frame_inference(full_frames, mel_chunks):
+def frame_inference(full_frames, mel_chunks, wrong_frames):
+    full_frames=torch.stack([torch.from_numpy(ff) for ff in full_frames]).unsqueeze(0).permute(0,4,1,2,3)
+    masked_frames=full_frames
+    masked_frames[:,:,:, args.img_size//2:] = 0
+    cat_frames=torch.cat([masked_frames,wrong_frames],1)
+    pred = model(mel_chunks, cat_frames)
+      
+    return pred
 
-	mel_chunks=list(mel_chunks.squeeze().numpy())
-
-
-	full_frames = full_frames[:len(mel_chunks)]
-
-	batch_size = 16
-	gen = datagen(full_frames.copy(), mel_chunks)
-
-	for i, (img_batch, mel_batch, frames, coords) in enumerate(tqdm(gen, 
-											total=int(np.ceil(float(len(mel_chunks))/batch_size)))):
-		if i == 0:
-			#model = load_model(args.checkpoint_path)
-			#print ("Model loaded")
-
-			frame_h, frame_w = full_frames[0].shape[:-1]
-
-
-		img_batch = torch.FloatTensor(np.transpose(img_batch, (0, 3, 1, 2))).to(device)
-		mel_batch = torch.FloatTensor(np.transpose(mel_batch, (0, 3, 1, 2))).to(device)
-
-		with torch.no_grad():
-			pred = model(mel_batch, img_batch)
-
-            
-	return pred
-
-	command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(args.audio, 'temp/result.avi', args.outfile)
-	subprocess.call(command, shell=platform.system() != 'Windows')
 
 
 

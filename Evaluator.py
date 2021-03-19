@@ -335,6 +335,7 @@ def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_glo
     return model
 
 
+
 syncnet_T = 5
 syncnet_mel_step_size = 16
 
@@ -416,6 +417,7 @@ class DatasetLowFrame(object):
             img_names = list(glob(join(vidname, '*.jpg')))
             if len(img_names) <= 3 * syncnet_T:
                 continue
+            
             # Only select even number frames 
             even_img_names = []
             for img_name in img_names:
@@ -462,18 +464,18 @@ class DatasetLowFrame(object):
             if indiv_mels is None: continue
 
             window = self.prepare_window(window)
-            low_frame_window = window[:,[0,2,4],:,:]
+            low_frame_window = window[:,[0,2,4],:,:]    # Remove the intermediate frames
             y = window.copy()
             # window[:, :, window.shape[2]//2:] = 0.   Remember to mask out lower part before feeding into Wav2Lip
 
             wrong_window = self.prepare_window(wrong_window)
-            low_frame_wrong_window = wrong_window[:,[0,2,4],:,:]
             
             xT = torch.FloatTensor(low_frame_window)                    # Correct 3 frames [Channel (3), Frame (3), Height (96), Width (96)]
-            xW = torch.FloatTensor(low_frame_wrong_window)              # Random 3 frames  [Channel, Frame, Height, Width]
+            xW = torch.FloatTensor(wrong_window)                        # Random 5 frames  [Channel, Frame (5), Height, Width]
             mel = torch.FloatTensor(mel.T).unsqueeze(0)                 # mel for y [1,80,16]
             indiv_mels = torch.FloatTensor(indiv_mels).unsqueeze(1)     # mel for individual images of y [Frame (5),1,80,16]
             y = torch.FloatTensor(y)                                    # Correct 5 frames [Channel, Frame (5), Height, Width]
             return xT, xW, indiv_mels, mel, y
-        
+
+
 

@@ -17,7 +17,6 @@ def wav2lip_rife(mels, imgs):
     rife_imgs0=inference_rife(I0,I1)
     rife_imgs1=inference_rife(I1,I2)
     out_frames=frame_inference(rife_imgs0+rife_imgs1[1::], mels)
-    out_frames = torch.tensor(out_frames).permute((3,0,1,2))
     out_frames=out_frames.unsqueeze(0).float()
     return out_frames
 

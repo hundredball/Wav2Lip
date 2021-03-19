@@ -10,14 +10,13 @@ from DatasetLowFrame import DatasetLowFrame
 from models import Wav2Lip_disc_qual
 
 
-def wav2lip_rife(mels, imgs):
+def wav2lip_rife(mels, imgs, imgs_wrong):
     I0=imgs[:,:,0,:,:]
     I1=imgs[:,:,1,:,:]
     I2=imgs[:,:,2,:,:]
     rife_imgs0=inference_rife(I0,I1)
     rife_imgs1=inference_rife(I1,I2)
-    out_frames=frame_inference(rife_imgs0+rife_imgs1[1::], mels)
-    out_frames=out_frames.unsqueeze(0).float()
+    out_frames=frame_inference(rife_imgs0+rife_imgs1[1::], mels, imgs_wrong)
     return out_frames
 
 if __name__ == '__main__':

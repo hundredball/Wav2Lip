@@ -286,7 +286,6 @@ def main():
 
 def frame_inference(full_frames, mel_chunks):
 
-	output=[]
 	mel_chunks=list(mel_chunks.squeeze().numpy())
 
 
@@ -310,18 +309,8 @@ def frame_inference(full_frames, mel_chunks):
 		with torch.no_grad():
 			pred = model(mel_batch, img_batch)
 
-		pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.
-		
-		for p, f, c in zip(pred, frames, coords):
-			y1, y2, x1, x2 = c
-			p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
-
-			f[y1:y2, x1:x2] = p
-			output.append(f)
-
             
-	return output
-	out.release()
+	return pred
 
 	command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(args.audio, 'temp/result.avi', args.outfile)
 	subprocess.call(command, shell=platform.system() != 'Windows')

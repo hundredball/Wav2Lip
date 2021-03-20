@@ -330,7 +330,7 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
 
 def eval_model(test_data_loader, device, model, disc, eval_steps=300):
     print('Evaluating for {} steps'.format(eval_steps))
-    running_sync_loss, running_l1_loss, running_disc_real_loss, running_disc_fake_loss, running_perceptual_loss = [], [], [], [], []
+    running_sync_loss, running_l1_loss, running_disc_real_loss, running_disc_fake_loss, running_perceptual_loss, running_content_loss = [], [], [], [], [], []
     while 1:
         for step, (x, indiv_mels, mel, gt) in enumerate((test_data_loader)):
             model.eval()
@@ -367,6 +367,7 @@ def eval_model(test_data_loader, device, model, disc, eval_steps=300):
 
             running_l1_loss.append(l1loss.item())
             running_sync_loss.append(sync_loss.item())
+            running_content_loss.append(content_loss.item())
             
             if hparams.disc_wt > 0.:
                 running_perceptual_loss.append(perceptual_loss.item())
@@ -375,9 +376,10 @@ def eval_model(test_data_loader, device, model, disc, eval_steps=300):
 
             if step > eval_steps: break
 
-        print('[Test] L1: {}, Sync: {}, Percep: {} | Fake: {}, Real: {}'.format(sum(running_l1_loss) / len(running_l1_loss),
+        print('[Test] L1: {}, Sync: {}, Percep: {}, Content: {} | Fake: {}, Real: {}'.format(sum(running_l1_loss) / len(running_l1_loss),
                                                             sum(running_sync_loss) / len(running_sync_loss),
                                                             sum(running_perceptual_loss) / len(running_perceptual_loss),
+                                                            sum(running_content_loss) / len(running_content_loss),
                                                             sum(running_disc_fake_loss) / len(running_disc_fake_loss),
                                                              sum(running_disc_real_loss) / len(running_disc_real_loss)))
         return sum(running_sync_loss) / len(running_sync_loss)

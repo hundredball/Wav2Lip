@@ -26,10 +26,10 @@ if __name__ == '__main__':
     Wav2lip_weights="./checkpoints/wav2lip.pth"
     set_model(Wav2lip_weights)
     
-    data_root = './lrs2_preprocessed_1/'
+    data_root = './lrs2_preprocessed/'
     dataset_low = DatasetLowFrame(data_root, 'test')
     test_data_loader = data_utils.DataLoader(dataset_low, batch_size=1, shuffle=False,num_workers=0)
 
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    eval_model(test_data_loader, wav2lip_rife, device, disc, eval_steps=300)
+    eval_model(test_data_loader, wav2lip_rife, device, eval_steps=10)

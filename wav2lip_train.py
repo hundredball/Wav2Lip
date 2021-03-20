@@ -2,7 +2,7 @@ from os.path import dirname, join, basename, isfile
 from tqdm import tqdm
 
 from models import SyncNet_color as SyncNet
-from models import Wav2Lip as Wav2Lip
+from models import Wav2Lip as Wav2Lip, FeatureExtractor
 import audio
 
 import torch
@@ -198,6 +198,17 @@ def get_sync_loss(mel, g):
     return cosine_loss(a, v, y)
     
 recon_loss = nn.L1Loss()
+feature_extractor = FeatureExtractor()
+feature_extractor.eval()
+
+# --------- Add content loss here ---------------
+def get_content_loss(g, gt):
+    
+    gen_feautres = feature_extractor(g)
+    real_features = feature_extractor(gt)
+    loss_content = recon_loss(gen_feautres, real_features.detach())
+
+    return loss_content
     
 
 def train(device, model, train_data_loader, test_data_loader, optimizer,
@@ -266,7 +277,7 @@ def train(device, model, train_data_loader, test_data_loader, optimizer,
 def eval_model(test_data_loader, device, model):
     eval_steps = 700
     print('Evaluating for {} steps'.format(eval_steps))
-    sync_losses, recon_losses = [], []
+    sync_losses, recon_losses, content_losses = [], [], []
     step = 0
     while 1:
         for x, indiv_mels, mel, gt in test_data_loader:
@@ -283,15 +294,18 @@ def eval_model(test_data_loader, device, model):
 
             sync_loss = get_sync_loss(mel, g)
             l1loss = recon_loss(g, gt)
+            content_loss = get_content_loss(g, gt)
 
             sync_losses.append(sync_loss.item())
             recon_losses.append(l1loss.item())
+            content_losses.append(content_loss.item())
 
             if step > eval_steps: 
                 averaged_sync_loss = sum(sync_losses) / len(sync_losses)
                 averaged_recon_loss = sum(recon_losses) / len(recon_losses)
+                averaged_content_loss = sum(content_losses) / len(content_losses)
 
-                print('[Test] L1: {}, Sync loss: {}'.format(averaged_recon_loss, averaged_sync_loss))
+                print('[Test] L1: {}, Sync loss: {}, Content loss: {}'.format(averaged_recon_loss, averaged_sync_loss, averaged_content_loss))
 
                 return averaged_sync_loss
 

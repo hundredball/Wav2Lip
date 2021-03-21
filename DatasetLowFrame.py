@@ -16,8 +16,10 @@ syncnet_T = 5
 syncnet_mel_step_size = 16
 
 class DatasetLowFrame(object):
-    def __init__(self, data_root, split):
+    def __init__(self, data_root, split, random):
         self.all_videos = get_image_list(data_root, split)
+        if not random:
+            np.random.seed(23)
 
     def get_frame_id(self, frame):
         return int(basename(frame).split('.')[0])

@@ -285,14 +285,20 @@ def main():
 	subprocess.call(command, shell=platform.system() != 'Windows')
 
 def frame_inference(full_frames, mel_chunks, wrong_frames, device):
+    '''
+    Return
+    -------
+    full_frames : (1, channel, frames, Height, Width)
+    pred : (1, channel, frames, Height, Width)
+    '''
     full_frames=torch.stack([torch.from_numpy(ff) for ff in full_frames]).unsqueeze(0).permute(0,4,1,2,3)
+    full_frames = full_frames.float() / 255.
     full_frames = full_frames.to(device)
     masked_frames = torch.clone(full_frames)
     masked_frames[:,:,:, 96//2:] = 0
     
     cat_frames=torch.cat([masked_frames,wrong_frames],1)
     pred = model(mel_chunks, cat_frames)
-    full_frames = full_frames.float()
     
     return full_frames, pred
 

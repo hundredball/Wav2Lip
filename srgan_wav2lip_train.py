@@ -195,6 +195,7 @@ def get_sync_loss(mel, g):
     g = g[:, :, :, g.size(3)//2:]
     g = torch.cat([g[:, :, i] for i in range(syncnet_T)], dim=1)
     # B, 3 * T, H//2, W
+    print('Shape of g: ', g.shape)
     a, v = syncnet(mel, g)
     y = torch.ones(g.size(0), 1).float().to(device)
     return cosine_loss(a, v, y)
@@ -223,8 +224,11 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
         print('Starting Epoch: {}'.format(global_epoch))
         running_sync_loss, running_l1_loss, disc_loss, running_perceptual_loss = 0., 0., 0., 0.
         running_disc_real_loss, running_disc_fake_loss = 0., 0.
-        #running_disc_real_acc, running_disc_fake_acc = 0., 0.
         prog_bar = tqdm(enumerate(train_data_loader))
+        
+        if global_step>9:
+            hparams.set_hparam('syncnet_wt', 0.03)
+        
         for step, (x, indiv_mels, mel, gt) in prog_bar:
             disc.train()
             model.train()
@@ -266,20 +270,10 @@ def train(device, model, disc, train_data_loader, test_data_loader, optimizer, d
             pred = disc(gt)
             disc_real_loss = F.binary_cross_entropy(pred, torch.ones((len(pred), 1)).to(device))
             disc_real_loss.backward()
-            '''
-            pred_label = pred.detach()
-            pred_label[pred<=0.5], pred_label[pred>0.5] = 0, 1
-            disc_real_acc = torch.sum(pred_label==1) / len(pred) * 100
-            '''
 
             pred = disc(g.detach())
             disc_fake_loss = F.binary_cross_entropy(pred, torch.zeros((len(pred), 1)).to(device))
             disc_fake_loss.backward()
-            '''
-            pred_label = pred.detach()
-            pred_label[pred<=0.5], pred_label[pred>0.5] = 0, 1
-            disc_fake_acc = torch.sum(pred_label==0) / len(pred) * 100
-            '''
             disc_optimizer.step()
 
             running_disc_real_loss += disc_real_loss.item()
@@ -486,4 +480,4 @@ if __name__ == "__main__":
                   checkpoint_interval=hparams.checkpoint_interval,
                   nepochs=hparams.nepochs)
     elif args.mode == 'test':
-        eval_model(test_data_loader, device, model, disc, eval_steps=700)
+        eval_model(test_data_loader, device, model, disc, eval_steps=10)

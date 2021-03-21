@@ -20,8 +20,50 @@ from glob import glob
 import os, random, cv2, argparse
 from hparams import hparams, get_image_list
 
-logloss = nn.BCELoss()
+use_cuda = torch.cuda.is_available()
 
+def _load(checkpoint_path):
+    if use_cuda:
+        checkpoint = torch.load(checkpoint_path)
+    else:
+        checkpoint = torch.load(checkpoint_path,
+                                map_location=lambda storage, loc: storage)
+    return checkpoint
+
+def load_checkpoint(path, model, optimizer, reset_optimizer=False, overwrite_global_states=True):
+    global global_step
+    global global_epoch
+
+    print("Load checkpoint from: {}".format(path))
+    checkpoint = _load(path)
+    s = checkpoint["state_dict"]
+    new_s = {}
+    for k, v in s.items():
+        new_s[k.replace('module.', '')] = v
+    model.load_state_dict(new_s)
+    if not reset_optimizer:
+        optimizer_state = checkpoint["optimizer"]
+        if optimizer_state is not None:
+            print("Load optimizer state from {}".format(path))
+            optimizer.load_state_dict(checkpoint["optimizer"])
+    if overwrite_global_states:
+        global_step = checkpoint["global_step"]
+        global_epoch = checkpoint["global_epoch"]
+
+    return model
+
+syncnet_T = 5
+syncnet_mel_step_size = 16
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+syncnet = SyncNet().to(device)
+
+for p in syncnet.parameters():
+    p.requires_grad = False
+    
+load_checkpoint('checkpoints/lipsync_expert.pth', syncnet, None, reset_optimizer=True, 
+                                overwrite_global_states=False)
+
+logloss = nn.BCELoss()
 def cosine_loss(a, v, y):
     d = nn.functional.cosine_similarity(a, v)
     loss = logloss(d.unsqueeze(1), y)
@@ -49,35 +91,58 @@ def get_content_loss(g, gt):
 
     return loss_content
 
-
 def eval_model(test_data_loader, wav2lip_rife, device, eval_steps=300):
     print('Evaluating for {} steps'.format(eval_steps))
-    running_sync_loss, running_l1_loss, running_content_loss = [], [], []
+    running_sync_loss_RIFE, running_l1_loss_RIFE, running_content_loss_RIFE = [], [], []
+    running_sync_loss_wav, running_l1_loss_wav, running_content_loss_wav = [], [], []
 
-    while 1:
-        for step, (x, xW, indiv_mels, mel, gt) in enumerate((test_data_loader)):
+    for step, (x, xW, indiv_mels, mel, gt) in enumerate((test_data_loader)):
 
-            x = x.to(device)
-            xW = xW.to(device)
-            mel = mel.to(device)
-            indiv_mels = indiv_mels.to(device)
-            gt = gt.to(device)
+        x = x.to(device)
+        xW = xW.to(device)
+        mel = mel.to(device)
+        indiv_mels = indiv_mels.to(device)
+        gt = gt.to(device)
 
-            # RIFE -> Wav2Lip
-            g = wav2lip_rife(indiv_mels, x, xW)
+        # RIFE -> Wav2Lip
+        g_RIFE, g_wav = wav2lip_rife(indiv_mels, x, xW, device)
+        
+        l1loss_RIFE = recon_loss(g_RIFE, gt)
+        sync_loss_RIFE = get_sync_loss(mel, g_RIFE)
+        content_loss_RIFE = get_content_loss(g_RIFE, gt)
 
-            l1loss = recon_loss(g, gt)
-            sync_loss = get_sync_loss(mel, g)
-            content_loss = get_content_loss(g, gt)
+        running_l1_loss_RIFE.append(l1loss_RIFE.item())
+        running_sync_loss_RIFE.append(sync_loss_RIFE.item())
+        running_content_loss_RIFE.append(content_loss_RIFE.item())
+        
+        l1loss_wav = recon_loss(g_wav, gt)
+        sync_loss_wav = get_sync_loss(mel, g_wav)
+        content_loss_wav = get_content_loss(g_wav, gt)
 
-            running_l1_loss.append(l1loss.item())
-            running_sync_loss.append(sync_loss.item())
-            running_content_loss.append(content_loss.item())
+        running_l1_loss_wav.append(l1loss_wav.item())
+        running_sync_loss_wav.append(sync_loss_wav.item())
+        running_content_loss_wav.append(content_loss_wav.item())
 
-            if step > eval_steps: break
+        if step > eval_steps: break
+    print('[Test] RIFE v.s. Target - L1: {}, Sync: {}, Content: {}'.format(step, sum(running_l1_loss_RIFE) / len(running_l1_loss_RIFE),
+                                                        sum(running_sync_loss_RIFE) / len(running_sync_loss_RIFE),
+                                                        sum(running_content_loss_RIFE) / len(running_content_loss_RIFE)))
+    print('[Test] Wav2Lip v.s. Target - L1: {}, Sync: {}, Content: {}'.format(step, sum(running_l1_loss_wav) / len(running_l1_loss_wav),
+                                                        sum(running_sync_loss_wav) / len(running_sync_loss_wav),
+                                                        sum(running_content_loss_wav) / len(running_content_loss_wav)))
+    
+    save_sample_images(g_RIFE, g_wav, gt, './outputs/')
+    
+    return sum(running_sync_loss_wav) / len(running_sync_loss_wav)
 
-        print('[Test] L1: {}, Sync: {}, Content: {}'.format(sum(running_l1_loss) / len(running_l1_loss),
-                                                            sum(running_sync_loss) / len(running_sync_loss),
-                                                            sum(running_content_loss) / len(running_content_loss)))
-        return sum(running_sync_loss) / len(running_sync_loss)
-
+def save_sample_images(g_RIFE, g_wav, gt, checkpoint_dir):
+    g_RIFE = (g_RIFE.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
+    g_wav = (g_wav.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
+    gt = (gt.detach().cpu().numpy().transpose(0, 2, 3, 4, 1) * 255.).astype(np.uint8)
+    
+    folder = checkpoint_dir
+    if not os.path.exists(folder): os.mkdir(folder)
+    collage = np.concatenate((g_RIFE, g_wav, gt), axis=-2)
+    for batch_idx, c in enumerate(collage):
+        for t in range(len(c)):
+            cv2.imwrite('{}/{}_{}.jpg'.format(folder, batch_idx, t), c[t])

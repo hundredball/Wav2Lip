@@ -185,6 +185,8 @@ def load_model(path):
 	return model.eval()
 
 def main():
+    
+	setup_wav2lip()    
 	if not os.path.isfile(args.face):
 		raise ValueError('--face argument must be a valid path to video/image file')
 
@@ -282,20 +284,17 @@ def main():
 	command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(args.audio, 'temp/result.avi', args.outfile)
 	subprocess.call(command, shell=platform.system() != 'Windows')
 
-
-
-def frame_inference(full_frames, mel_chunks, wrong_frames):
+def frame_inference(full_frames, mel_chunks, wrong_frames, device):
     full_frames=torch.stack([torch.from_numpy(ff) for ff in full_frames]).unsqueeze(0).permute(0,4,1,2,3)
-    masked_frames=full_frames
-    masked_frames[:,:,:, args.img_size//2:] = 0
+    full_frames = full_frames.to(device)
+    masked_frames = torch.clone(full_frames)
+    masked_frames[:,:,:, 96//2:] = 0
+    
     cat_frames=torch.cat([masked_frames,wrong_frames],1)
     pred = model(mel_chunks, cat_frames)
-      
-    return pred
-
-
-
-
+    full_frames = full_frames.float()
+    
+    return full_frames, pred
 
 if __name__ == '__main__':
 	main()

@@ -5,17 +5,22 @@ This code combines RIFE and Wav2Lip to interpolate the intermdiate frames by RIF
 Prerequisites
 -------------
 - Follow Prerequisites in Wav2Lip and Installation in RIFE
+- Create a folder './Wav2Lip/train_log' and put RIFE weights in it
 
 Getting the weights
 ----------
 | Model  | Description |  Link to the model | 
 | :-------------: | :---------------: | :---------------: |
 | Wav2Lip + SRGAN | Wav2Lip with perceptual loss | [Link](https://drive.google.com/file/d/1Vk-Zmhf06VsAm6ORKyhEvLEfz9W9MhXC/view?usp=sharing) |
-| RIFE | RIFE trained on LRS2 Dataset | [Link](https://drive.google.com/drive/folders/1AC5EWooUHHTfb7dP8ue05uLfBOMkYs8n?usp=sharing) |
+| RIFE | RIFE trained on LRS2 Dataset | [Link](https://drive.google.com/drive/folders/1qHSG0Tik2MGH80EQGwarV-7AnQ2mcbCQ?usp=sharing) |
 
 Evaluation
 ----------
-Will be updated.
+- python Loader.py (Evaluate RIFE+Wav2Lip)
+
+Demo Videos
+----------
+[Link](https://drive.google.com/drive/folders/1oea4ZFTDqy7OOvYv0oszhh0-cZtC2nPv?usp=sharing)
 
 # **Wav2Lip**: *Accurately Lip-syncing Videos In The Wild*
 

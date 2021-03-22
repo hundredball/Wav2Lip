@@ -45,9 +45,9 @@ if __name__ == '__main__':
     
     data_root = './lrs2_preprocessed/'
     dataset_low = DatasetLowFrame(data_root, 'test', args.random_dataset)
-    test_data_loader = data_utils.DataLoader(dataset_low, batch_size=8, shuffle=False, num_workers=0)
+    test_data_loader = data_utils.DataLoader(dataset_low, batch_size=12, shuffle=False, num_workers=0)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    eval_model(test_data_loader, wav2lip_rife, device, eval_steps=1)
+    eval_model(test_data_loader, wav2lip_rife, device, eval_steps=700)
     print('Elapsed %.1f seconds'%(time.time()-start_time))

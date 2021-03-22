@@ -123,11 +123,11 @@ def eval_model(test_data_loader, wav2lip_rife, device, eval_steps=300):
         running_sync_loss_wav.append(sync_loss_wav.item())
         running_content_loss_wav.append(content_loss_wav.item())
 
-        if step > eval_steps: break
-    print('[Test] RIFE v.s. Target - L1: {}, Sync: {}, Content: {}'.format(step, sum(running_l1_loss_RIFE) / len(running_l1_loss_RIFE),
+        if step >= eval_steps-1: break
+    print('[Test] RIFE v.s. Target - L1: {}, Sync: {}, Content: {}'.format(sum(running_l1_loss_RIFE) / len(running_l1_loss_RIFE),
                                                         sum(running_sync_loss_RIFE) / len(running_sync_loss_RIFE),
                                                         sum(running_content_loss_RIFE) / len(running_content_loss_RIFE)))
-    print('[Test] Wav2Lip v.s. Target - L1: {}, Sync: {}, Content: {}'.format(step, sum(running_l1_loss_wav) / len(running_l1_loss_wav),
+    print('[Test] Wav2Lip v.s. Target - L1: {}, Sync: {}, Content: {}'.format(sum(running_l1_loss_wav) / len(running_l1_loss_wav),
                                                         sum(running_sync_loss_wav) / len(running_sync_loss_wav),
                                                         sum(running_content_loss_wav) / len(running_content_loss_wav)))
     

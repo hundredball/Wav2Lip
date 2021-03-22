@@ -105,6 +105,7 @@ class DatasetLowFrame(object):
                     even_img_names.append(img_name)
             
             img_name = np.random.choice(even_img_names)
+            
             wrong_img_name = np.random.choice(even_img_names)
             while wrong_img_name == img_name:
                 wrong_img_name = np.random.choice(even_img_names)

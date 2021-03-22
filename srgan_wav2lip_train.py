@@ -195,7 +195,6 @@ def get_sync_loss(mel, g):
     g = g[:, :, :, g.size(3)//2:]
     g = torch.cat([g[:, :, i] for i in range(syncnet_T)], dim=1)
     # B, 3 * T, H//2, W
-    print('Shape of g: ', g.shape)
     a, v = syncnet(mel, g)
     y = torch.ones(g.size(0), 1).float().to(device)
     return cosine_loss(a, v, y)
@@ -439,7 +438,7 @@ if __name__ == "__main__":
         num_workers=4)
 
     test_data_loader = data_utils.DataLoader(
-        val_dataset, batch_size=hparams.batch_size,
+        test_dataset, batch_size=hparams.batch_size,
         num_workers=4)
     
 
@@ -480,4 +479,4 @@ if __name__ == "__main__":
                   checkpoint_interval=hparams.checkpoint_interval,
                   nepochs=hparams.nepochs)
     elif args.mode == 'test':
-        eval_model(test_data_loader, device, model, disc, eval_steps=10)
+        eval_model(test_data_loader, device, model, disc, eval_steps=700)
